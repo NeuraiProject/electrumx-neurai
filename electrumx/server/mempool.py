@@ -46,11 +46,11 @@ class OPPushDataGeneric:
 
 SCRIPTPUBKEY_TEMPLATE_P2PK = [OPPushDataGeneric(lambda x: x in (33, 65)), OpCodes.OP_CHECKSIG]
 # Marks an address as valid for restricted assets via qualifier or restricted itself.
-ASSET_NULL_TEMPLATE = [OpCodes.OP_XNA_ASSET, OPPushDataGeneric(lambda x: x == 20), OPPushDataGeneric()]
+ASSET_NULL_TEMPLATE = [OpCodes.OP_RVN_ASSET, OPPushDataGeneric(lambda x: x == 20), OPPushDataGeneric()]
 # Used with creating restricted assets. Dictates the qualifier assets associated.
-ASSET_NULL_VERIFIER_TEMPLATE = [OpCodes.OP_XNA_ASSET, OpCodes.OP_RESERVED, OPPushDataGeneric()]
+ASSET_NULL_VERIFIER_TEMPLATE = [OpCodes.OP_RVN_ASSET, OpCodes.OP_RESERVED, OPPushDataGeneric()]
 # Stop all movements of a restricted asset.
-ASSET_GLOBAL_RESTRICTION_TEMPLATE = [OpCodes.OP_XNA_ASSET, OpCodes.OP_RESERVED, OpCodes.OP_RESERVED,
+ASSET_GLOBAL_RESTRICTION_TEMPLATE = [OpCodes.OP_RVN_ASSET, OpCodes.OP_RESERVED, OpCodes.OP_RESERVED,
                                      OPPushDataGeneric()]
 
 
@@ -199,6 +199,13 @@ class MemPool(object):
 
     async def _logging(self, synchronized_event):
         '''Print regular logs of mempool stats.'''
+
+        def fmt_amt(amount):
+            whole, frac = divmod(amount, 100_000_000)
+            frac = f'{frac:08}'.rstrip('0') or '0'
+            frac = f'{frac:8}'
+            return f'{whole:,d}.{frac}'
+    
         self.logger.info('beginning processing of daemon mempool.  '
                          'This can take some time...')
         start = time.monotonic()
@@ -206,18 +213,27 @@ class MemPool(object):
         elapsed = time.monotonic() - start
         self.logger.info(f'synced in {elapsed:.2f}s')
         while True:
-            mempool_size = sum(tx.size for tx in self.txs.values()) / 1_000_000
-            self.logger.info(f'{len(self.txs):,d} txs {mempool_size:.2f} MB '
-                             f'touching {len(self.hashXs):,d} addresses'
-                             #f'{len(self.asset_creates):,d} asset creations, '
-                             #f'{len(self.asset_reissues):,d} asset reissues, '
-                             #f'{len(self.qualifier_tags):,d} qualifier tags, '
-                             #f'{len(self.h160_tags):,d} h160s tagged, '
-                             #f'{len(self.broadcasts):,d} broadcasts, '
-                             #f'{len(self.freezes):,d} freezes, '
-                             #f'{len(self.verifiers):,d} verifier string updates, '
-                             #f'{len(self.qualifier_associations):,d} qualifier associations'
-                             )
+            mempool_size = sum(tx.size for tx in self.txs.values())
+            fees = sum(tx.fee for tx in self.txs.values())
+            sats_byte = fees / (mempool_size or 1)
+            log_msg = f'{len(self.txs):,d} txs {mempool_size/1_000_000:.2f} MB fees {fmt_amt(fees)} ({sats_byte:.3f} sats/b) touching {len(self.hashXs):,d} addresses'
+            if self.asset_creates:
+                log_msg += f', {len(self.asset_creates):,d} asset creations'
+            if self.asset_reissues:
+                log_msg += f', {len(self.asset_reissues):,d} asset reissues'
+            if self.qualifier_tags:
+                log_msg += f', {sum(len(x) for x in self.qualifier_tags.values()):,d} qualifier tags'
+            if self.h160_tags:
+                log_msg += f', {sum(len(x) for x in self.h160_tags.values()):,d} h160s tagged'
+            if self.broadcasts:
+                log_msg += f', {sum(len(x) for x in self.broadcasts.values()):,d} broadcasts'
+            if self.freezes:
+                log_msg += f', {len(self.freezes):,d} freezes'
+            if self.verifiers:
+                log_msg += f', {len(self.verifiers):,d} verifier string updates'
+            if self.qualifier_associations:
+                log_msg += f', {sum(len(x) for x in self.qualifier_associations.values()):,d} qualifier associations'
+            self.logger.info(log_msg)
             await sleep(self.log_status_secs)
             await synchronized_event.wait()
 
@@ -583,17 +599,17 @@ class MemPool(object):
                     op_ptr = -1
                     for i in range(len(ops)):
                         op = ops[i][0]  # The OpCode
-                        if op == OpCodes.OP_XNA_ASSET:
+                        if op == OpCodes.OP_RVN_ASSET:
                             op_ptr = i
                             break
 
                     if op_ptr > 0:
-                        # This script has OP_XNA_ASSET. Use everything before this for the script hash.
+                        # This script has OP_RVN_ASSET. Use everything before this for the script hash.
                         # Get the raw script bytes ending ptr from the previous opcode.
                         script_hash_end = ops[op_ptr - 1][1]
                         hashX = to_hashX(txout.pk_script[:script_hash_end])
                     else:
-                        # There is no OP_XNA_ASSET. Hash as-is.
+                        # There is no OP_RVN_ASSET. Hash as-is.
                         hashX = to_hashX(txout.pk_script)
 
                     # Best effort for standard asset portions
@@ -738,21 +754,40 @@ class MemPool(object):
         # return None - concurrent database updates happen - which is
         # relied upon by _accept_transactions. Ignore prevouts that are
         # generation-like.
-        prevouts = tuple(prevout for tx in tx_map.values()
+        bc_prevouts = tuple((txid, prevout) for txid, tx in tx_map.items()
                          for prevout in tx.prevouts
                          if prevout[0] not in all_hashes)
+        mp_prevouts = tuple((txid, prevout) for txid, tx in tx_map.items()
+                         for prevout in tx.prevouts
+                         if prevout[0] in all_hashes)
 
-        utxos = []
+        for this_txid, prevout in mp_prevouts:
+            prev_hash, prev_index = prevout
 
-        for hX, asset, v in await self.api.lookup_utxos(prevouts):
-            utxos.append((hX, v, asset))
+            tx = tx_map.get(prev_hash, None)
+            if not tx:
+                tx = self.txs.get(prev_hash, None)
+            if not tx: continue
+            hX, v, asset = tx.out_pairs[prev_index]
             for txid, d in possible_broadcasts[hX].items():
+                if this_txid != txid: continue
                 for tx_pos, (broadcast_asset, data, expiry) in d.items():
                     if broadcast_asset == asset:
                         broadcasts[asset][txid] = (data, expiry, tx_pos)
                         tx_to_broadcast[txid].add(asset)
-            
-        utxo_map = {prevout: utxo for prevout, utxo in zip(prevouts, utxos)}
+
+        utxos = []
+
+        for this_txid, (hX, asset, v) in zip((x[0] for x in bc_prevouts), await self.api.lookup_utxos((x[1] for x in bc_prevouts))):
+            utxos.append((hX, v, asset))
+            for txid, d in possible_broadcasts[hX].items():
+                if this_txid != txid: continue
+                for tx_pos, (broadcast_asset, data, expiry) in d.items():
+                    if broadcast_asset == asset:
+                        broadcasts[asset][txid] = (data, expiry, tx_pos)
+                        tx_to_broadcast[txid].add(asset)
+    
+        utxo_map = {prevout: utxo for prevout, utxo in zip((x[1] for x in bc_prevouts), utxos)}
 
         return self._accept_transactions(tx_map, utxo_map, touched, assets_touched,
                                          tag_qualifiers_touched, tag_h160_touched, broadcasts_asset_touched,
@@ -856,7 +891,7 @@ class MemPool(object):
     
     async def get_qualifier_tags(self, asset: str):
         ret = {}
-        for txid, (h160, tx_pos, flag) in self.qualifier_tags[asset].items():
+        for txid, (h160, tx_pos, flag) in self.qualifier_tags.get(asset, dict()).items():
             ret[h160.hex()] = {
                 'flag': flag,
                 'height': -1,
@@ -867,7 +902,7 @@ class MemPool(object):
     
     async def get_h160_tags(self, h160: str):
         ret = {}
-        for txid, (asset, tx_pos, flag) in self.h160_tags[h160].items():
+        for txid, (asset, tx_pos, flag) in self.h160_tags.get(h160, dict()).items():
             ret[asset] = {
                 'flag': flag,
                 'height': -1,
@@ -878,7 +913,7 @@ class MemPool(object):
 
     async def get_broadcasts(self, asset: str):
         ret = []
-        for txid, (data, expiry, tx_pos) in self.broadcasts[asset].items():
+        for txid, (data, expiry, tx_pos) in self.broadcasts.get(asset, dict()).items():
             ret.append({
                 'tx_hash': hash_to_hex_str(txid),
                 'data': base_encode(data, 58),
@@ -889,7 +924,7 @@ class MemPool(object):
         return ret
     
     async def is_frozen(self, asset: str):
-        for txid, (tx_pos, flag) in self.freezes[asset].items():
+        for txid, (tx_pos, flag) in self.freezes.get(asset, dict()).items():
             return {
                 'frozen': flag,
                 'height': -1,
@@ -899,7 +934,7 @@ class MemPool(object):
         return None
 
     async def restricted_verifier(self, asset: str):
-        for txid, (qual_pos, res_pos, string) in self.verifiers[asset].items():
+        for txid, (qual_pos, res_pos, string) in self.verifiers.get(asset, dict()).items():
             return {
                 'string': string,
                 'height': -1,
@@ -911,7 +946,7 @@ class MemPool(object):
 
     async def restricted_assets_associated_with_qualifier(self, asset: str):
         ret_val = {}
-        for txid, (qual_pos, res_pos, restricted_asset) in self.qualifier_associations[asset].items():
+        for txid, (qual_pos, res_pos, restricted_asset) in self.qualifier_associations.get(asset, dict()).items():
             ret_val[restricted_asset] = {
                 'associated': True,
                 'height': -1,

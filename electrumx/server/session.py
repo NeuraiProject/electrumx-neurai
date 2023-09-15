@@ -85,6 +85,13 @@ def assert_tx_hash(value):
         pass
     raise RPCError(BAD_REQUEST, f'{value} should be a transaction hash')
 
+def assert_raw_bytes(value):
+    '''Raise an RPCError if the value is not valid raw bytes (in hex).'''
+    try:
+        return bytes.fromhex(value)
+    except (ValueError, TypeError):
+        pass
+    raise RPCError(BAD_REQUEST, f'argument should be hex-encoded bytes')
 
 @attr.s(slots=True)
 class SessionGroup:
@@ -989,7 +996,7 @@ class SessionBase(RPCSession):
 def check_asset(name):
     if not isinstance(name, str):
         raise RPCError(
-            BAD_REQUEST, f'the asset name must be a string'
+            BAD_REQUEST, f'the asset name must be a string ({repr(name)}; {name.__class__})'
         ) from None
     if len(name) <= 0:
         raise RPCError(
@@ -1013,9 +1020,9 @@ def check_h160(h160):
 class ElectrumX(SessionBase):
     '''A TCP server that handles incoming Electrum connections.'''
 
-    PROTOCOL_MIN = (1, 0)
-    PROTOCOL_MAX = (1, 4)
-    PROTOCOL_BAD = ()
+    PROTOCOL_MIN = (1, 4)
+    PROTOCOL_MAX = (1, 11)
+    PROTOCOL_BAD = ((1, 9),)
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -1235,7 +1242,11 @@ class ElectrumX(SessionBase):
 
         return status
 
-    async def tags_for_qualifier_status(self, qualifier):
+    async def tags_for_qualifier_status(self, qualifier: str):
+        if qualifier[0] != '#' and qualifier[0] != '$':
+            raise RPCError(
+                BAD_REQUEST, f'{qualifier} is not a qualifier nor a restricted asset'
+            ) from None
         data = await self.qualifications_for_qualifier(qualifier)
         s_data = sorted(data.items(), key=lambda x: x[0])
         if s_data:
@@ -1261,7 +1272,7 @@ class ElectrumX(SessionBase):
 
     async def broadcasts_status(self, asset):
         data = await self.get_messages(asset)
-        s_data = sorted(data, key=lambda x: (x["height"], x['tx_hash'], x[1]["tx_pos"]))
+        s_data = sorted(data, key=lambda x: (x["height"], x['tx_hash'], x["tx_pos"]))
         if s_data:
             status = ';'.join(f'{d["tx_hash"]}:{d["height"]}{d["tx_pos"]}{d["data"]}{d["expiration"]}' for d in s_data)
             self.bump_cost(0.1 + len(status) * 0.00002)
@@ -1327,7 +1338,8 @@ class ElectrumX(SessionBase):
     async def hashX_listunspent(self, hashX, asset):
         '''Return the list of UTXOs of a script hash, including mempool
         effects.'''
-
+        if asset is None:
+            asset = False
         if isinstance(asset, str):
             check_asset(asset)
         elif isinstance(asset, Iterable):
@@ -1421,16 +1433,20 @@ class ElectrumX(SessionBase):
 
     async def subscribe_qualifier_associated_restricted(self, asset):
         check_asset(asset)
-        if asset[0] == '#':
-            asset = asset[1:]
+        if asset[0] != '#':
+            raise RPCError(
+                BAD_REQUEST, f'{asset} is not a qualifier'
+            ) from None
         result = await self.qualifier_associations_status(asset)
         self.qualifier_validator_subs.add(asset)
         return result
 
     async def unsubscribe_qualifier_associated_restricted(self, asset):
         check_asset(asset)
-        if asset[0] == '#':
-            asset = asset[1:]
+        if asset[0] != '#':
+            raise RPCError(
+                BAD_REQUEST, f'{asset} is not a qualifier'
+            ) from None
         return self.qualifier_validator_subs.discard(asset) is not None
 
     async def get_balance(self, hashX, asset):
@@ -1717,6 +1733,7 @@ class ElectrumX(SessionBase):
         '''Broadcast a raw transaction to the network.
 
         raw_tx: the raw transaction as a hexadecimal string'''
+        assert_raw_bytes(raw_tx)
         self.bump_cost(0.25 + len(raw_tx) / 5000)
         # This returns errors as JSON RPC errors, as is natural
         try:
@@ -1880,11 +1897,11 @@ class ElectrumX(SessionBase):
 
     async def get_messages(self, name):
         check_asset(name)
-        ret = await self.db.lookup_messages(name.encode('ascii'))
-        self.bump_cost(1.0 + len(ret) / 10)
-        ret += await self.mempool.get_broadcasts(name.encode('ascii'))
-        ret.sort(key=lambda x: x['height'])
-        return ret
+        b_items = await self.db.lookup_messages(name.encode('ascii'))
+        self.bump_cost(1.0 + len(b_items) / 10)
+        m_items = await self.mempool.get_broadcasts(name.encode('ascii'))
+        b_items.sort(key=lambda x: (x['height'], x['tx_hash']), reverse=True)
+        return m_items + b_items
 
     async def is_qualified(self, h160: str, asset: str):
         check_asset(asset)
@@ -1904,7 +1921,7 @@ class ElectrumX(SessionBase):
 
     async def qualifications_for_qualifier(self, asset: str, include_mempool=True):
         check_asset(asset)
-        res = await self.db.qualifications_for_qualifier(asset)
+        res = await self.db.qualifications_for_qualifier(asset.encode())
         # This incurs 2 db lookups and is no longer contiguous
         self.bump_cost(2.0 + len(res))
         if include_mempool:
@@ -1924,6 +1941,10 @@ class ElectrumX(SessionBase):
 
     async def get_restricted_string(self, asset: str, include_mempool=True):
         check_asset(asset)
+        if asset[0] != '$':
+            raise RPCError(
+                BAD_REQUEST, f'{asset} is not a restricted asset'
+            ) from None
         if include_mempool:
             mem_res = await self.mempool.restricted_verifier(asset)
             if mem_res:
@@ -1933,8 +1954,10 @@ class ElectrumX(SessionBase):
 
     async def lookup_qualifier_associations(self, asset: str, include_mempool=True):
         check_asset(asset)
-        if asset[0] == '#':
-            asset = asset[1:]
+        if asset[0] != '#':
+            raise RPCError(
+                BAD_REQUEST, f'{asset} is not a qualifier'
+            ) from None
         res = await self.db.lookup_qualifier_associations(asset.encode('ascii'))
         self.bump_cost(1.0 + len(res) / 10)
         if include_mempool:
@@ -2003,7 +2026,10 @@ class ElectrumX(SessionBase):
             'blockchain.scripthash.unsubscribe': self.scripthash_unsubscribe,
             'blockchain.asset.subscribe': self.asset_subscribe,
             'blockchain.asset.unsubscribe': self.asset_unsubscribe,
+            'blockchain.asset.check_tag': self.is_qualified,
+            'blockchain.asset.all_tags': self.qualifications_for_h160,
             'blockchain.asset.is_frozen': self.is_restricted_frozen,
+            'blockchain.asset.validator_string': self.get_restricted_string,
             'blockchain.asset.restricted_associations': self.lookup_qualifier_associations,
             'blockchain.asset.broadcasts': self.get_messages,
             'blockchain.asset.get_assets_with_prefix': self.get_assets_with_prefix,
