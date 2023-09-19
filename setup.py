@@ -8,7 +8,7 @@ with open('requirements.txt', 'r') as f:
     requirements = f.read().splitlines()
 
 setuptools.setup(
-    name='electrumX-ravencoin',
+    name='electrumX-neurai',
     version=version,
     scripts=['electrumx_server', 'electrumx_rpc', 'electrumx_compact_history'],
     python_requires='>=3.8',
@@ -22,9 +22,9 @@ setuptools.setup(
     author='Neil Booth',
     author_email='kyuupichan@gmail.com',
     license='MIT Licence',
-    url='https://github.com/Electrum-RVN-SIG/electrumx-ravencoin',
+    url='https://github.com/NeuraiProject/electrumx-neurai',
     long_description='Ravencoin server implementation for the Electrum protocol',
-    download_url=('https://github.com/Electrum-RVN-SIG/electrumx-ravencoin/archive/'
+    download_url=('https://github.com/NeuraiProject/electrumx-neurai/archive/'
                   f'{version}.tar.gz'),
     classifiers=[
         'Development Status :: 5 - Production/Stable',

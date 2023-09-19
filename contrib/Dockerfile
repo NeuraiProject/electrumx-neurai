@@ -1,4 +1,4 @@
-# example of Dockerfile that builds release of electrumx-ravencoin-1.11.0
+# example of Dockerfile that builds release of electrumx-neurai-1.11.0
 # ENV variables can be overrided on the `docker run` command
 
 FROM debian:bookworm-slim
@@ -24,19 +24,19 @@ RUN python3 -m pip install --upgrade pip
 
 ARG VERSION=1.11.0
 
-ADD --chown=electrumx https://github.com/Electrum-RVN-SIG/electrumx-ravencoin/archive/v${VERSION}.tar.gz .
+ADD --chown=electrumx https://github.com/NeuraiProject/electrumx-neurai/archive/main.tar.gz .
 RUN tar zxvf *.tar.gz
 RUN rm *.tar.gz
 
-WORKDIR /home/electrumx/electrumx-ravencoin-${VERSION}
+WORKDIR /home/electrumx/electrumx-neurai-main
 RUN python3 -m pip install -r requirements.txt
 RUN python3 setup.py install
 WORKDIR /home/electrumx
 
-RUN rm -r electrumx-ravencoin-${VERSION}
+RUN rm -r electrumx-neurai-main
 
-ENV SERVICES="ssl://:50002,tcp://:50001,rpc://:8000"
-ENV COIN=Ravencoin
+ENV SERVICES="ssl://:19012,tcp://:19011,rpc://:8000"
+ENV COIN=Neurai
 ENV DB_DIRECTORY=/db
 ENV DAEMON_URL="http://username:password@hostname:port/"
 ENV ALLOW_ROOT=true
@@ -55,8 +55,8 @@ ENV SSL_KEYFILE="${DB_DIRECTORY}/ssl_cert/server.key"
 # env REPORT_SERVICES = ssl://rvn4lyfe.com:50002,tcp://rvn4lyfe.com:50001
 
 EXPOSE 8000
-EXPOSE 50001
-EXPOSE 50002
+EXPOSE 19011
+EXPOSE 19012
 
 VOLUME /db
 
@@ -72,7 +72,7 @@ CMD if [ -d "$DB_DIRECTORY/ssl_cert/" ]; then \
         openssl x509 -req -days 1825 -in server.csr -signkey server.key -out server.crt; \
     fi && electrumx_server
 
-# build it with eg.: `docker build -t electrumx-ravencoin .`
+# build it with eg.: `docker build -t electrumx-neurai .`
 # run it with eg.:
-# `docker run -d --net=host -v /home/electrumx/db/:/db -e DAEMON_URL="http://youruser:yourpass@localhost:8766" -e REPORT_SERVICES=tcp://example.com:50001 electrumx-ravencoin`
+# `docker run -d --net=host -v /home/electrumx/db/:/db -e DAEMON_URL="http://youruser:yourpass@localhost:8766" -e REPORT_SERVICES=tcp://example.com:50001 electrumx-neurai`
 # for a proper clean shutdown, send TERM signal to the running container eg.: `docker kill --signal="TERM" CONTAINER_ID`

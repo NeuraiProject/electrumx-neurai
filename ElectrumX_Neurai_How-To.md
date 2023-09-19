@@ -59,13 +59,13 @@ This way you can always access the binary files through ./raven/bin/... from you
 
 ### Step-by-step setup of the electrumx server
 
-The electrumx server is almost entirely written in python and can be found [HERE](https://github.com/Electrum-RVN-SIG/electrumx-ravencoin/releases/).
+The electrumx server is almost entirely written in python and can be found [HERE](https://github.com/NeuraiProject/electrumx-neurai/releases/).
 
-Full documentation and information about installation / running of the electrumx server can be found [HERE](https://electrumx-ravencoin.readthedocs.io/en/latest/)
+Full documentation and information about installation / running of the electrumx server can be found [HERE](https://electrumx-neurai.readthedocs.io/en/latest/)
 
 It is assumed that you have basic knowledge of editing files on Linux (vi, vim, nano etc.) and also basic knowledge of Python is helpful in case errors come up during the installation. 
 
-- Download latest version of electrumx ravencoin with **git clone https://github.com/Electrum-RVN-SIG/electrumx-ravencoin.git** or download from the link above (e.g. wget <path>) – the tar.gz version is suggested as that can easily be unpacked with tar –xzf {name}.tar.gz . 
+- Download latest version of electrumx ravencoin with **git clone https://github.com/NeuraiProject/electrumx-neurai.git** or download from the link above (e.g. wget <path>) – the tar.gz version is suggested as that can easily be unpacked with tar –xzf {name}.tar.gz . 
 
 - Make a symbolic link to the electrumx, e.g., **ln -s {name} electrumx** so the version can be found by the scripts in-system. 
 
@@ -131,7 +131,7 @@ EVENT_LOOP_POLICY=uvloop
 
 CACHE\_MB = {Defaults to 1200 MB in memory. You may decrease this if this number is too much}
 
-- See [HERE](https://electrumx-ravencoin.readthedocs.io/en/latest/environment.html) for a full list of environment variables. You should at least briefly look over this to see if you need to change anything for your server and what to change/add to the above step (take a look at what the soft and hard limits do, you should probably change them for lower load).
+- See [HERE](https://electrumx-neurai.readthedocs.io/en/latest/environment.html) for a full list of environment variables. You should at least briefly look over this to see if you need to change anything for your server and what to change/add to the above step (take a look at what the soft and hard limits do, you should probably change them for lower load).
 
 - Now double-check that the rvn node is running and up-to-date with the blocks:**./raven/bin/raven-cli getblockchaininfo** if that looks ok you can start the electrumx server: **systemctl start electrumx** 
 

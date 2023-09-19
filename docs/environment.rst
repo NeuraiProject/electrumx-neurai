@@ -237,7 +237,7 @@ These environment variables are optional:
   + ``$DONATION_ADDRESS`` is replaced with the address from the
     :envvar:`DONATION_ADDRESS` environment variable.
 
-  See `here <https://github.com/Electrum-RVN-SIG/electrumx-banner-updater>`_
+  See `here <https://github.com/NeuraiProject/electrumx-banner-updater>`_
   for a script that updates a banner file periodically with useful
   statistics about fees, last block time and height, etc.
 
@@ -487,5 +487,5 @@ your available physical RAM:
 
   Write any outpoints that could not be parsed into the database to file.
 
-.. _lib/coins.py: https://github.com/Electrum-RVN-SIG/electrumx-ravencoin/blob/master/electrumx/lib/coins.py
+.. _lib/coins.py: https://github.com/NeuraiProject/electrumx-neurai/blob/master/electrumx/lib/coins.py
 .. _uvloop: https://pypi.python.org/pypi/uvloop
