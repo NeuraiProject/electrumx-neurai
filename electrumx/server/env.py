@@ -70,7 +70,7 @@ class Env(EnvBase):
         self.log_level = self.default('LOG_LEVEL', 'info').upper()
         self.donation_address = self.default('DONATION_ADDRESS', '')
         self.drop_client = self.custom("DROP_CLIENT", None, re.compile)
-        self.cache_MB = self.integer('CACHE_MB', 1200)
+        self.cache_MB = self.integer('CACHE_MB', 12000)
         self.reorg_limit = self.integer('REORG_LIMIT', self.coin.REORG_LIMIT)
 
         # Server limits to help prevent DoS
@@ -80,8 +80,8 @@ class Env(EnvBase):
         self.max_sessions = self.sane_max_sessions()
         self.cost_soft_limit = self.integer('COST_SOFT_LIMIT', 1000)
         self.cost_hard_limit = self.integer('COST_HARD_LIMIT', 10000)
-        self.bw_unit_cost = self.integer('BANDWIDTH_UNIT_COST', 5000)
-        self.initial_concurrent = self.integer('INITIAL_CONCURRENT', 10)
+        self.bw_unit_cost = self.integer('BANDWIDTH_UNIT_COST', 50000)
+        self.initial_concurrent = self.integer('INITIAL_CONCURRENT', 600)
         self.request_sleep = self.integer('REQUEST_SLEEP', 2500)
         self.request_timeout = self.integer('REQUEST_TIMEOUT', 30)
         self.session_timeout = self.integer('SESSION_TIMEOUT', 600)
